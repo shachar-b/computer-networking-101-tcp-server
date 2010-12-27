@@ -17,6 +17,7 @@ const int SEND = 4;
 //Services
 const int SEND_TIME = 1;
 const int SEND_SECONDS = 2;
+const int SEND_BAD_REQUEST = 400;
 
 
 //Structs
@@ -356,6 +357,14 @@ void receiveMessage(int index)
 				removeSocket(index);
 				return;
 			}
+			else
+			{
+				sockets[index].send  = SEND;
+				sockets[index].sendSubType = SEND_BAD_REQUEST;
+				memcpy(sockets[index].buffer, &sockets[index].buffer[38], sockets[index].len - 38);
+				sockets[index].len -= 38;
+				return;
+			}
 		}
 	}
 }
@@ -385,6 +394,11 @@ void sendMessage(int index)
 		// Convert the number to string.
 		_itoa((int)timer, sendBuff, 10);		
 	}
+	else if (sockets[index].sendSubType == SEND_BAD_REQUEST)
+	{
+		strcpy(sendBuff,"HTTP/1.1 400 BAD REQUEST\r\n\r\n");
+		//strcpy(sendBuff,"FUCKIT\r\n");
+	}
 
 	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
 	if (SOCKET_ERROR == bytesSent)
@@ -393,7 +407,7 @@ void sendMessage(int index)
 		return;
 	}
 
-	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sendBuff)<<" bytes of \""<<sendBuff<<"\" message.\n";	
+	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sendBuff)<<" bytes of \"\n"<<sendBuff<<"\n\" message.\n";	
 
 	sockets[index].send = IDLE;
 }
