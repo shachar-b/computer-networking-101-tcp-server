@@ -5,6 +5,7 @@ using namespace std;
 #include <winsock2.h>
 #include <string.h>
 #include <time.h>
+#pragma comment(lib, "Ws2_32.lib")
 
 //Consts
 const int LISTEN_PORT = 80;
