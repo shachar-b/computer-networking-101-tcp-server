@@ -19,6 +19,19 @@ const int SEND = 4;
 const int SEND_TIME = 1;
 const int SEND_SECONDS = 2;
 const int SEND_BAD_REQUEST = 400;
+enum eReqType {GET, HEAD, PUT, DELETE,BAD_REQUEST=404,NOT_IMPLEMENTED=501};
+struct header{
+	string name;
+	string val;
+};
+struct request
+{
+	eReqType methodType;
+	string uri;//path
+	int http_version_major;
+	int http_version_minor;
+	vector<header> headers;
+};
 
 
 //Structs
@@ -41,6 +54,8 @@ void removeSocket(int index);
 void acceptConnection(int index);
 void receiveMessage(int index);
 void sendMessage(int index);
+void passSpaces(char * & buff);
+void readHeaders(char * & buffer,request & req);
 
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
@@ -411,4 +426,176 @@ void sendMessage(int index)
 	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sendBuff)<<" bytes of \"\n"<<sendBuff<<"\n\" message.\n";	
 
 	sockets[index].send = IDLE;
+}
+
+#define FAIL -1
+/*  Parses a string and updates a request
+information structure if necessary.    */
+
+int Parse_HTTP_Header(char * buffer, request & reqinfo) {
+
+	int first_header = 1;
+	char      *temp;
+	char      *endptr;
+	int        len;
+
+
+	/*  If first_header is 0, this is the first line of
+	the HTTP request, so this should be the request line.  */
+
+
+	/*  Get the request method, which is case-sensitive. This
+	version of the server only supports the GET and HEAD
+	request methods.                                        */
+
+	if ( strncmp(buffer, "GET ", 4)==0 ) {
+		reqinfo.methodType = GET;
+		buffer += 4;
+	}
+	else if ( strncmp(buffer, "HEAD ", 5)==0 ) {
+		reqinfo.methodType = HEAD;
+		buffer += 5;
+	}
+	else if ( strncmp(buffer, "PUT ", 4)==0 ) {
+		reqinfo.methodType = PUT;
+		buffer += 4;
+	}
+	else if ( strncmp(buffer, "DELETE ", 7)==0 ) {
+		reqinfo.methodType = DELETE;
+		buffer += 7;
+	}
+	else {
+		reqinfo.methodType = NOT_IMPLEMENTED;
+		return FAIL;
+	}
+	/*  Skip to start of resource  */
+
+	passSpaces(buffer);
+
+
+	/*  Calculate string length of resource...  */
+
+	endptr = strchr(buffer, ' ');//find next white space
+	if ( endptr == NULL )
+		len = strlen(buffer);
+	else
+		len = (int)(endptr - buffer);
+	if ( len == 0 ) {
+		reqinfo.methodType=BAD_REQUEST;
+		return FAIL;
+	}
+
+	/*  ...and store it in the request information structure.  */
+	reqinfo.uri="";//init
+	for(int i=0; i<len; i++)
+	{
+		reqinfo.uri.push_back(buffer[0]);
+		buffer++;//next char
+	}
+	if (buffer[0]!='\n')
+	{
+		reqinfo.methodType=BAD_REQUEST;
+		return FAIL;
+	}
+	buffer++;//pass CRLF
+	if ( strncmp(buffer, "HTTP/1.0",9) )
+	{
+		reqinfo.http_version_major=1;
+		reqinfo.http_version_minor=0;
+	}
+	else if ( strncmp(buffer, "HTTP/1.1",9) )
+	{
+		reqinfo.http_version_major=1;
+		reqinfo.http_version_minor=1;
+	}
+	else
+	{
+		reqinfo.methodType=BAD_REQUEST;
+		return FAIL;
+	}
+
+	readHeaders(buffer);
+	
+	endptr = strchr(buffer, ':');
+	if ( endptr == NULL ) {
+		reqinfo->status = 400;
+		return -1;
+	}
+
+	temp = calloc( (endptr - buffer) + 1, sizeof(char) );
+	strncpy(temp, buffer, (endptr - buffer));
+	StrUpper(temp);
+
+
+	/*  Increment buffer so that it now points to the value.
+	If there is no value, just return.                    */
+
+	buffer = endptr + 1;
+	while ( *buffer && isspace(*buffer) )
+		++buffer;
+	if ( *buffer == '\0' )
+		return 0;
+
+
+	/*  Now update the request information structure with the
+	appropriate field value. This version only supports the
+	"Referer:" and "User-Agent:" headers, ignoring all others.  */
+
+	if ( !strcmp(temp, "USER-AGENT") ) {
+		reqinfo->useragent = malloc( strlen(buffer) + 1 );
+		strcpy(reqinfo->useragent, buffer);
+	}
+	else if ( !strcmp(temp, "REFERER") ) {
+		reqinfo->referer = malloc( strlen(buffer) + 1 );
+		strcpy(reqinfo->referer, buffer);
+	}
+
+	free(temp);
+	return 0;
+}
+
+void passSpaces( char * & buff )
+{
+	while ( buff[0]!='\0' && isspace(buff[0]) )
+		buff++;//read from next place
+}
+
+void readHeaders( char * & buffer,request & req )
+{
+	char * endptr;
+	string temp1="";
+	string temp2="";
+	endptr = strchr(buffer, ':');
+	while(endptr!=NULL)//as long as there are still headers to read
+	
+		temp1="";
+		temp2="";
+		if (endptr==NULL)
+		{
+			return;//no more
+		}
+		for (int i=0;i<endptr-buffer;i++)
+		{
+			temp1.push_back(buffer[0]);
+			buffer++;
+		}
+		buffer++//move past :
+		endptr = strchr(buffer, '\n');//read until new line
+		for (int i=0;i<endptr-buffer;i++)
+		{
+			temp2.push_back(buffer[0]);
+			buffer++;
+		}
+		req.headers
+
+
+		endptr = strchr(buffer, ':');
+	}
+	
+}
+
+bool isLWS(char a)
+{
+	return (a=='\n'||a=='\t' || a==' ');
+	
 }
