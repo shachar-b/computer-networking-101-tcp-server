@@ -5,7 +5,9 @@ using namespace std;
 #include <winsock2.h>
 #include <string.h>
 #include <time.h>
+#include <vector>
 #pragma comment(lib, "Ws2_32.lib")
+#define CRLF "\r\n"
 
 //Consts
 const int LISTEN_PORT = 80;
@@ -18,12 +20,15 @@ const int SEND = 4;
 //Services
 const int SEND_TIME = 1;
 const int SEND_SECONDS = 2;
-const int SEND_BAD_REQUEST = 400;
-enum eReqType {GET, HEAD, PUT, DELETE,BAD_REQUEST=404,NOT_IMPLEMENTED=501};
+
+enum eReqType {GET, HEAD, PUT, DELETE_REQ,BAD_REQUEST=400,NOT_IMPLEMENTED=501};
+
+//Structs
 struct header{
 	string name;
 	string val;
 };
+
 struct request
 {
 	eReqType methodType;
@@ -33,8 +38,6 @@ struct request
 	vector<header> headers;
 };
 
-
-//Structs
 struct SocketState
 {
 	SOCKET id;			// Socket handle
@@ -56,6 +59,7 @@ void receiveMessage(int index);
 void sendMessage(int index);
 void passSpaces(char * & buff);
 void readHeaders(char * & buffer,request & req);
+bool isLWS(char a);
 
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
@@ -346,7 +350,7 @@ void receiveMessage(int index)
 	else
 	{
 		sockets[index].buffer[len + bytesRecv] = '\0'; //add the null-terminating to make it a string
-		cout<<"Web Server: Recieved: "<<bytesRecv<<" bytes of \n\"\n"<<&sockets[index].buffer[len]<<"\" message.\n";
+		cout<<"Web Server: Received: "<<bytesRecv<<" bytes of \n\"\n"<<&sockets[index].buffer[len]<<"\" message.\n";
 		sockets[index].len += bytesRecv;
 
 		if (sockets[index].len > 0)
@@ -376,7 +380,7 @@ void receiveMessage(int index)
 			else
 			{
 				sockets[index].send  = SEND;
-				sockets[index].sendSubType = SEND_BAD_REQUEST;
+				sockets[index].sendSubType = NOT_IMPLEMENTED;
 				memcpy(sockets[index].buffer, &sockets[index].buffer[38], sockets[index].len - 38);
 				sockets[index].len -= 38;
 				return;
@@ -410,10 +414,9 @@ void sendMessage(int index)
 		// Convert the number to string.
 		_itoa((int)timer, sendBuff, 10);		
 	}
-	else if (sockets[index].sendSubType == SEND_BAD_REQUEST)
+	else if (sockets[index].sendSubType == NOT_IMPLEMENTED)
 	{
-		strcpy(sendBuff,"HTTP/1.1 400 BAD REQUEST\r\n\r\n");
-		//strcpy(sendBuff,"FUCKIT\r\n");
+		strcpy(sendBuff,"HTTP/1.1 501 NOT IMPLEMENTED\r\n\r\n");
 	}
 
 	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
@@ -445,7 +448,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 
 
 	/*  Get the request method, which is case-sensitive. This
-	version of the server only supports the GET and HEAD
+	version of the server only supports the GET, HEAD, PUT, DELETE
 	request methods.                                        */
 
 	if ( strncmp(buffer, "GET ", 4)==0 ) {
@@ -461,7 +464,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 		buffer += 4;
 	}
 	else if ( strncmp(buffer, "DELETE ", 7)==0 ) {
-		reqinfo.methodType = DELETE;
+		reqinfo.methodType = DELETE_REQ;
 		buffer += 7;
 	}
 	else {
@@ -498,6 +501,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 		return FAIL;
 	}
 	buffer++;//pass CRLF
+	//Parse HTTP version
 	if ( strncmp(buffer, "HTTP/1.0",9) )
 	{
 		reqinfo.http_version_major=1;
@@ -514,17 +518,19 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 		return FAIL;
 	}
 
-	readHeaders(buffer);
+	readHeaders(buffer,reqinfo);
 	
 	endptr = strchr(buffer, ':');
 	if ( endptr == NULL ) {
-		reqinfo->status = 400;
-		return -1;
+		reqinfo.methodType = BAD_REQUEST;
+		return FAIL;
 	}
-
-	temp = calloc( (endptr - buffer) + 1, sizeof(char) );
+	
+	temp = new char[(endptr - buffer) + 1];
 	strncpy(temp, buffer, (endptr - buffer));
-	StrUpper(temp);
+	temp[endptr - buffer]='\0';
+	_strupr(temp);
+	
 
 
 	/*  Increment buffer so that it now points to the value.
@@ -567,7 +573,7 @@ void readHeaders( char * & buffer,request & req )
 	string temp2="";
 	endptr = strchr(buffer, ':');
 	while(endptr!=NULL)//as long as there are still headers to read
-	
+	{
 		temp1="";
 		temp2="";
 		if (endptr==NULL)
@@ -579,7 +585,7 @@ void readHeaders( char * & buffer,request & req )
 			temp1.push_back(buffer[0]);
 			buffer++;
 		}
-		buffer++//move past :
+		buffer++;//move past :
 		endptr = strchr(buffer, '\n');//read until new line
 		for (int i=0;i<endptr-buffer;i++)
 		{
@@ -589,13 +595,12 @@ void readHeaders( char * & buffer,request & req )
 		req.headers
 
 
-		endptr = strchr(buffer, ':');
+			endptr = strchr(buffer, ':');
 	}
-	
+
 }
 
 bool isLWS(char a)
 {
 	return (a=='\n'||a=='\t' || a==' ');
-	
 }
