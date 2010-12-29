@@ -60,7 +60,7 @@ void sendMessage(int index);
 void passSpaces(char * & buff);
 void readHeaders(char * & buffer,request & req);
 bool isLWS(char a);
-
+bool operator==(const string& str,const char * str2);
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
 int socketsCount = 0;
@@ -437,8 +437,6 @@ information structure if necessary.    */
 
 int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 
-	int first_header = 1;
-	char      *temp;
 	char      *endptr;
 	int        len;
 
@@ -519,45 +517,16 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 	}
 
 	readHeaders(buffer,reqinfo);
-	
-	endptr = strchr(buffer, ':');
-	if ( endptr == NULL ) {
-		reqinfo.methodType = BAD_REQUEST;
+	if (reqinfo.methodType==BAD_REQUEST)
+	{
 		return FAIL;
 	}
-	
-	temp = new char[(endptr - buffer) + 1];
-	strncpy(temp, buffer, (endptr - buffer));
-	temp[endptr - buffer]='\0';
-	_strupr(temp);
-	
-
-
-	/*  Increment buffer so that it now points to the value.
-	If there is no value, just return.                    */
-
-	buffer = endptr + 1;
-	while ( *buffer && isspace(*buffer) )
-		++buffer;
-	if ( *buffer == '\0' )
-		return 0;
-
-
-	/*  Now update the request information structure with the
-	appropriate field value. This version only supports the
-	"Referer:" and "User-Agent:" headers, ignoring all others.  */
-
-	if ( !strcmp(temp, "USER-AGENT") ) {
-		reqinfo->useragent = malloc( strlen(buffer) + 1 );
-		strcpy(reqinfo->useragent, buffer);
-	}
-	else if ( !strcmp(temp, "REFERER") ) {
-		reqinfo->referer = malloc( strlen(buffer) + 1 );
-		strcpy(reqinfo->referer, buffer);
-	}
-
-	free(temp);
 	return 0;
+		
+
+
+
+	
 }
 
 void passSpaces( char * & buff )
@@ -566,12 +535,23 @@ void passSpaces( char * & buff )
 		buff++;//read from next place
 }
 
+header makeHeader(const string & name, const string & Val )
+{
+	header head;
+	head.name=name;
+	head.val=Val;
+	return head;
+}
 void readHeaders( char * & buffer,request & req )
 {
 	char * endptr;
 	string temp1="";
 	string temp2="";
 	endptr = strchr(buffer, ':');
+	if ( endptr == NULL ) //at least one header is a must(Host)
+	{
+		req.methodType = BAD_REQUEST;
+	}
 	while(endptr!=NULL)//as long as there are still headers to read
 	{
 		temp1="";
@@ -592,7 +572,13 @@ void readHeaders( char * & buffer,request & req )
 			temp2.push_back(buffer[0]);
 			buffer++;
 		}
-		req.headers
+		//we only kepp the following headers, all others are ignored
+		if (temp1=="Content-Length" || temp1=="Expect" ||temp1=="Host"||temp1=="User-Agent"|| temp1=="connection")
+		{
+			req.headers.push_back(makeHeader(temp1, temp2));
+		}
+		
+
 
 
 			endptr = strchr(buffer, ':');
@@ -603,4 +589,9 @@ void readHeaders( char * & buffer,request & req )
 bool isLWS(char a)
 {
 	return (a=='\n'||a=='\t' || a==' ');
+}
+bool operator==(const string& str,const char * str2)
+{
+	const char * temp=str.c_str();
+	return strcmp(temp,str2)==0;
 }
