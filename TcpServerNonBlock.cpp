@@ -70,7 +70,8 @@ void readBody(char * & buffer,request & req);
 bool isLWS(char a);
 request makeNewReq();
 int Parse_HTTP_Header(char * buffer, request & reqinfo);
-int makeResponce(request & reqinfo, char sendbuffer[]);
+int makeresponse(request & reqinfo, char sendbuffer[]);
+void writeDateHeader(string & response);
 string ReqToString (eReqType methodType);
 int actOnRequest(request & reqinfo);
 void putFile(request & reqinfo);
@@ -78,6 +79,7 @@ void deleteFile(request & reqinfo);
 bool exists(const char* filePath);
 bool isWriteProtected(const char* filePath);
 void makePath(const string &path);
+bool FolderExists(char* strFolderName);
 bool operator==(const string& str,const char * str2);
 char* formatTime();
 //Globals
@@ -377,7 +379,7 @@ void receiveMessage(int index)
 	//		char* bufferPosSaver = &(sockets[index].buffer[0]);
 			Parse_HTTP_Header(sockets[index].buffer,req);
 			sockets[index].send=SEND;
-			makeResponce(req,sockets[index].sendBuffer);//EDIT_THIS?
+			makeresponse(req,sockets[index].sendBuffer);//EDIT_THIS?
 	//		sockets[index].buffer=bufferPosSaver;
 		}
 	}
@@ -399,14 +401,15 @@ void sendMessage(int index)
 	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sockets[index].sendBuffer)<<" bytes of \"\n"<<sockets[index].sendBuffer<<"\n\" message.\n";	
 
 	sockets[index].send = IDLE;
+	sockets[index].len=0; //Finished with this transaction - reset length of buffer.
 }
 
 #define FAIL -1
 /*  Parses a string and updates a request
 information structure if necessary.    */
 
-int Parse_HTTP_Header(char * buffer, request & reqinfo) {
-
+int Parse_HTTP_Header(char * buffer, request & reqinfo)
+{
 	char      *endptr;
 	int        len;
 
@@ -497,11 +500,6 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 	}
 	readBody(buffer,reqinfo);
 	return 0;
-		
-
-
-
-	
 }
 
 void passSpaces( char * & buff )
@@ -586,26 +584,27 @@ request makeNewReq()
 	return req;
 }
 
-int makeResponce( request & reqinfo, char sendbuffer[] )
+int makeresponse( request & reqinfo, char sendbuffer[] )
 {
-	string responce="HTTP/";
+	string response="HTTP/";
 	actOnRequest(reqinfo);//changes the req code to the send code(200,404,...)
-	responce.push_back('0'+reqinfo.http_version_major);
-	responce.push_back('.');
-	responce.push_back(('0'+reqinfo.http_version_minor));
-	responce+=ReqToString(reqinfo.methodType);
-	responce+=CRLF;
-	responce+="Date: ";
-	responce+=formatTime();
-	responce+=CRLF;
-	responce+=CRLF;//End reply.
-	responce+=CRLF;//End reply.
-	strcpy(sendbuffer,responce.c_str());
+	response.push_back('0'+reqinfo.http_version_major);
+	response.push_back('.');
+	response.push_back(('0'+reqinfo.http_version_minor));
+	response+=ReqToString(reqinfo.methodType);
+	response+=CRLF;
+	writeDateHeader(response);
+	response+=CRLF;//End reply.
+	strcpy(sendbuffer,response.c_str());
 	
 	return 1;
+}
 
-
-
+void writeDateHeader(string & response)
+{
+	response+="Date: ";
+	response+=formatTime();
+	response+=CRLF;
 }
 
 char* formatTime()
@@ -758,8 +757,16 @@ void makePath( const string &path )
 		directoryFullPath=new char[endOfDirectoryPath+1];
 		strncpy(directoryFullPath,path.c_str(),endOfDirectoryPath);
 		directoryFullPath[endOfDirectoryPath]='\0';
-		systemCommand += directoryFullPath;
-		system(systemCommand.c_str());
+		if (!FolderExists(directoryFullPath))
+		{
+			systemCommand += directoryFullPath;
+			system(systemCommand.c_str());
+		}
 		delete []directoryFullPath;
 	}
+}
+
+bool FolderExists(char* strFolderName)
+{
+	return GetFileAttributesA(strFolderName) != INVALID_FILE_ATTRIBUTES;
 }
