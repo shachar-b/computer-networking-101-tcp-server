@@ -6,10 +6,13 @@ using namespace std;
 #include <string.h>
 #include <time.h>
 #include <vector>
+#include <winbase.h>
 #pragma comment(lib, "Ws2_32.lib")
 #define CRLF "\r\n"
 
 //Consts
+
+
 const int LISTEN_PORT = 80;
 const int MAX_SOCKETS = 60;
 const int EMPTY = 0;
@@ -21,7 +24,7 @@ const int SEND = 4;
 const int SEND_TIME = 1;
 const int SEND_SECONDS = 2;
 
-enum eReqType {GET, HEAD, PUT, DELETE_REQ,BAD_REQUEST=400,NOT_IMPLEMENTED=501};
+enum eReqType {GET, HEAD, PUT, DELETE_REQ,OK=200,BAD_REQUEST=400,Forbidden=403,Not_Found=404,Internal_Server_Error=500,NOT_IMPLEMENTED=501};
 
 //Structs
 struct header{
@@ -44,7 +47,8 @@ struct SocketState
 	int	recv;			// Receiving?
 	int	send;			// Sending?
 	int sendSubType;	// Sending sub-type
-	char buffer[128];
+	char buffer[512];
+	char sendBuffer[512];
 	int len;
 };
 
@@ -60,6 +64,14 @@ void sendMessage(int index);
 void passSpaces(char * & buff);
 void readHeaders(char * & buffer,request & req);
 bool isLWS(char a);
+request makeNewReq();
+int Parse_HTTP_Header(char * buffer, request & reqinfo);
+int makeResponce(request & reqinfo, char sendbuffer[]);
+string ReqToString (eReqType methodType);
+int actOnRequest(request & reqinfo);
+void putFile(request & reqinfo);
+void deleteFile(request & reqinfo);
+bool exists(const char* filePath);
 bool operator==(const string& str,const char * str2);
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
@@ -352,39 +364,12 @@ void receiveMessage(int index)
 		sockets[index].buffer[len + bytesRecv] = '\0'; //add the null-terminating to make it a string
 		cout<<"Web Server: Received: "<<bytesRecv<<" bytes of \n\"\n"<<&sockets[index].buffer[len]<<"\" message.\n";
 		sockets[index].len += bytesRecv;
-
+		request req=makeNewReq();
 		if (sockets[index].len > 0)
 		{
-			if (strncmp(sockets[index].buffer, "TimeString", 10) == 0)
-			{
-				sockets[index].send  = SEND;
-				sockets[index].sendSubType = SEND_TIME;
-				memcpy(sockets[index].buffer, &sockets[index].buffer[10], sockets[index].len - 10);
-				sockets[index].len -= 10;
-				return;
-			}
-			else if (strncmp(sockets[index].buffer, "SecondsSince1970", 16) == 0)
-			{
-				sockets[index].send  = SEND;
-				sockets[index].sendSubType = SEND_SECONDS;
-				memcpy(sockets[index].buffer, &sockets[index].buffer[16], sockets[index].len - 16);
-				sockets[index].len -= 16;
-				return;
-			}
-			else if (strncmp(sockets[index].buffer, "Exit", 4) == 0)
-			{
-				closesocket(msgSocket);
-				removeSocket(index);
-				return;
-			}
-			else
-			{
-				sockets[index].send  = SEND;
-				sockets[index].sendSubType = NOT_IMPLEMENTED;
-				memcpy(sockets[index].buffer, &sockets[index].buffer[38], sockets[index].len - 38);
-				sockets[index].len -= 38;
-				return;
-			}
+			Parse_HTTP_Header(sockets[index].buffer,req);
+			sockets[index].send=SEND;
+			makeResponce(req,sockets[index].sendBuffer);//EDIT_THIS?
 		}
 	}
 }
@@ -392,41 +377,17 @@ void receiveMessage(int index)
 void sendMessage(int index)
 {
 	int bytesSent = 0;
-	char sendBuff[255];
-
 	SOCKET msgSocket = sockets[index].id;
-	if (sockets[index].sendSubType == SEND_TIME)
-	{
-		// Answer client's request by the current time string.
-		// Get the current time.
-		time_t timer;
-		time(&timer);
-		// Parse the current time to printable string.
-		strcpy(sendBuff, ctime(&timer));
-		sendBuff[strlen(sendBuff)-1] = 0; //to remove the new-line from the created string
-	}
-	else if(sockets[index].sendSubType == SEND_SECONDS)
-	{
-		// Answer client's request by the current time in seconds.
-		// Get the current time.
-		time_t timer;
-		time(&timer);
-		// Convert the number to string.
-		_itoa((int)timer, sendBuff, 10);		
-	}
-	else if (sockets[index].sendSubType == NOT_IMPLEMENTED)
-	{
-		strcpy(sendBuff,"HTTP/1.1 501 NOT IMPLEMENTED\r\n\r\n");
-	}
+	
 
-	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
+	bytesSent = send(msgSocket, sockets[index].sendBuffer, (int)strlen(sockets[index].sendBuffer), 0);
 	if (SOCKET_ERROR == bytesSent)
 	{
 		cout << "Web Server: Error at send(): " << WSAGetLastError() << endl;	
 		return;
 	}
 
-	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sendBuff)<<" bytes of \"\n"<<sendBuff<<"\n\" message.\n";	
+	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sockets[index].sendBuffer)<<" bytes of \"\n"<<sockets[index].sendBuffer<<"\n\" message.\n";	
 
 	sockets[index].send = IDLE;
 }
@@ -488,24 +449,25 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 
 	/*  ...and store it in the request information structure.  */
 	reqinfo.uri="";//init
-	for(int i=0; i<len; i++)
+	buffer++;
+	for(int i=0; i<len-1; i++)
 	{
 		reqinfo.uri.push_back(buffer[0]);
 		buffer++;//next char
 	}
-	if (buffer[0]!='\n')
+	if (buffer[0]!=' ')
 	{
 		reqinfo.methodType=BAD_REQUEST;
 		return FAIL;
 	}
 	buffer++;//pass CRLF
 	//Parse HTTP version
-	if ( strncmp(buffer, "HTTP/1.0",9) )
+	if ( strncmp(buffer, "HTTP/1.0",8)==0 )
 	{
 		reqinfo.http_version_major=1;
 		reqinfo.http_version_minor=0;
 	}
-	else if ( strncmp(buffer, "HTTP/1.1",9) )
+	else if ( strncmp(buffer, "HTTP/1.1",8)==0 )
 	{
 		reqinfo.http_version_major=1;
 		reqinfo.http_version_minor=1;
@@ -515,7 +477,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 		reqinfo.methodType=BAD_REQUEST;
 		return FAIL;
 	}
-
+	buffer+=8;//jump past http/1.*
 	readHeaders(buffer,reqinfo);
 	if (reqinfo.methodType==BAD_REQUEST)
 	{
@@ -547,6 +509,7 @@ void readHeaders( char * & buffer,request & req )
 	char * endptr;
 	string temp1="";
 	string temp2="";
+	passSpaces(buffer);
 	endptr = strchr(buffer, ':');
 	if ( endptr == NULL ) //at least one header is a must(Host)
 	{
@@ -556,24 +519,20 @@ void readHeaders( char * & buffer,request & req )
 	{
 		temp1="";
 		temp2="";
-		if (endptr==NULL)
-		{
-			return;//no more
-		}
 		for (int i=0;i<endptr-buffer;i++)
 		{
-			temp1.push_back(buffer[0]);
-			buffer++;
+			temp1.push_back(buffer[i]);
 		}
-		buffer++;//move past :
-		endptr = strchr(buffer, '\n');//read until new line
+		buffer=endptr+1;//move past :
+		passSpaces(buffer);
+		endptr = strchr(buffer,'\n');//read until new line
 		for (int i=0;i<endptr-buffer;i++)
 		{
-			temp2.push_back(buffer[0]);
-			buffer++;
+			temp2.push_back(buffer[i]);
 		}
+		buffer=endptr+1;
 		//we only kepp the following headers, all others are ignored
-		if (temp1=="Content-Length" || temp1=="Expect" ||temp1=="Host"||temp1=="User-Agent"|| temp1=="connection")
+		if (temp1=="Content-Length" || temp1=="Expect" ||temp1=="Host"||temp1=="User-Agent"|| temp1=="Connection")
 		{
 			req.headers.push_back(makeHeader(temp1, temp2));
 		}
@@ -581,7 +540,15 @@ void readHeaders( char * & buffer,request & req )
 
 
 
-			endptr = strchr(buffer, ':');
+			if (buffer!=NULL)
+			{
+				endptr = strchr(buffer, ':');
+			}
+			else
+			{
+				return;
+			}
+			
 	}
 
 }
@@ -594,4 +561,115 @@ bool operator==(const string& str,const char * str2)
 {
 	const char * temp=str.c_str();
 	return strcmp(temp,str2)==0;
+}
+request makeNewReq()
+{
+	request req;
+	req.methodType=BAD_REQUEST;
+	req.http_version_major=1;
+	req.http_version_minor=1;
+	req.uri="";
+	return req;
+}
+
+int makeResponce( request & reqinfo, char sendbuffer[] )
+{
+	string responce="HTTP/";
+	actOnRequest(reqinfo);//changes the req code to the send code(200,404,...)
+	responce.push_back('0'+reqinfo.http_version_major);
+	responce.push_back('.');
+	responce.push_back(('0'+reqinfo.http_version_minor));
+	responce+=ReqToString(reqinfo.methodType);
+	responce+="\r\n\r\n";
+	strcpy(sendbuffer,responce.c_str());
+	
+	return 1;
+
+
+
+}
+string ReqToString (eReqType methodType)
+{
+	switch(methodType)
+	{
+	case OK : return " 200 OK";
+	case BAD_REQUEST : return " 400 Bad Request";
+	case Forbidden : return " 403 Forbidden";
+	case Not_Found : return " 404 Not Found";
+	case NOT_IMPLEMENTED : return " 501 Not Implemented";
+	default:return "500 Internal Server Error"; // if the method type is none of the above an error has occared
+	}
+
+}
+int actOnRequest(request & reqinfo)
+{
+	switch(reqinfo.methodType)
+	{
+	case GET:
+		//change this please
+		reqinfo.methodType=NOT_IMPLEMENTED;
+		break;
+	case HEAD:
+		reqinfo.methodType=NOT_IMPLEMENTED;
+		break;
+	case PUT:
+		putFile(reqinfo);
+		break;
+	case DELETE_REQ:
+		deleteFile(reqinfo);
+		break;
+
+	}
+	return 1;
+}
+
+
+void putFile(request & reqinfo)
+{
+
+}
+bool exists(const char* filePath)
+{
+	//This will get the file attributes bitlist of the file
+	DWORD fileAtt = GetFileAttributesA(filePath);
+	//If an error occurred it will equal to INVALID_FILE_ATTRIBUTES
+	if(fileAtt == INVALID_FILE_ATTRIBUTES)
+		return false;
+
+	//If the path referers to a directory it should also not exists.
+	return ( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
+}
+bool isWriteProtected(const char* filePath)
+{
+	//This will get the file attributes bitlist of the file
+	DWORD fileAtt = GetFileAttributesA(filePath);
+	//If the path referers to a directory it should also not exists.
+	return ( ( fileAtt & FILE_ATTRIBUTE_READONLY ) != 0 ); 
+}
+
+void deleteFile(request & req)
+{
+
+	if ( !exists(req.uri.c_str()) ) //file dosent exsist
+	{
+		req.methodType=Not_Found;
+
+	}
+	else
+	{
+		if (!isWriteProtected(req.uri.c_str()))
+		{
+			if( remove( req.uri.c_str() ) != 0 )
+				req.methodType=Internal_Server_Error;
+			else
+				req.methodType=OK;
+			
+		}
+		else
+		{
+			req.methodType=Forbidden;
+		}
+		
+	}
+		
 }
