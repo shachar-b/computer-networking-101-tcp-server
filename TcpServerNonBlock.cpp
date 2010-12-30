@@ -8,6 +8,7 @@ using namespace std;
 #include <time.h>
 #include <vector>
 #include <winbase.h>
+#include <windows.h>
 #pragma comment(lib, "Ws2_32.lib")
 #define CRLF "\r\n"
 
@@ -78,6 +79,7 @@ bool exists(const char* filePath);
 bool isWriteProtected(const char* filePath);
 void makePath(const string &path);
 bool operator==(const string& str,const char * str2);
+char* formatTime();
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
 int socketsCount = 0;
@@ -372,9 +374,11 @@ void receiveMessage(int index)
 		request req=makeNewReq();
 		if (sockets[index].len > 0)
 		{
+	//		char* bufferPosSaver = &(sockets[index].buffer[0]);
 			Parse_HTTP_Header(sockets[index].buffer,req);
 			sockets[index].send=SEND;
 			makeResponce(req,sockets[index].sendBuffer);//EDIT_THIS?
+	//		sockets[index].buffer=bufferPosSaver;
 		}
 	}
 }
@@ -457,7 +461,10 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 	buffer++;
 	for(int i=0; i<len-1; i++)
 	{
-		reqinfo.uri.push_back(buffer[0]);
+		if (buffer[0]=='/')
+			reqinfo.uri.push_back('\\');
+		else
+			reqinfo.uri.push_back(buffer[0]);
 		buffer++;//next char
 	}
 	if (buffer[0]!=' ')
@@ -587,7 +594,12 @@ int makeResponce( request & reqinfo, char sendbuffer[] )
 	responce.push_back('.');
 	responce.push_back(('0'+reqinfo.http_version_minor));
 	responce+=ReqToString(reqinfo.methodType);
-	responce+="\r\n\r\n";
+	responce+=CRLF;
+	responce+="Date: ";
+	responce+=formatTime();
+	responce+=CRLF;
+	responce+=CRLF;//End reply.
+	responce+=CRLF;//End reply.
 	strcpy(sendbuffer,responce.c_str());
 	
 	return 1;
@@ -595,6 +607,19 @@ int makeResponce( request & reqinfo, char sendbuffer[] )
 
 
 }
+
+char* formatTime()
+{
+	char* timeStr;
+	// Get the current time.
+	time_t timer;
+	time(&timer);
+	// Parse the current time to printable string.
+	timeStr=_strdup(ctime(&timer));
+	timeStr[strlen(timeStr)-1] = 0; //to remove the new-line from the created string
+	return timeStr;
+}
+
 string ReqToString (eReqType methodType)
 {
 	switch(methodType)
@@ -604,7 +629,7 @@ string ReqToString (eReqType methodType)
 	case Forbidden : return " 403 Forbidden";
 	case Not_Found : return " 404 Not Found";
 	case NOT_IMPLEMENTED : return " 501 Not Implemented";
-	default:return "500 Internal Server Error"; // if the method type is none of the above an error has occared
+	default:return " 500 Internal Server Error"; // if the method type is none of the above an error has occared
 	}
 
 }
@@ -646,8 +671,8 @@ void putFile(request & reqinfo)
 		}
 		else
 		{
-			ofstream fileToPut(reqinfo.uri.c_str());
 			makePath(reqinfo.uri);//add the folder path if it needs to be added
+			ofstream fileToPut(reqinfo.uri.c_str());
 			fileToPut<<reqinfo.body.c_str();
 			if (fileToPut.fail())
 			{
@@ -724,6 +749,17 @@ void readBody( char * & buffer,request & req )
 
 void makePath( const string &path )
 {
-	//reateDirectory(path.c_str(),0);have fun
-
+	char* backSlash = "\\"; //Using char* for compatability with find_last_of
+	char* directoryFullPath;
+	int endOfDirectoryPath = path.find_last_of(backSlash);
+	string systemCommand="mkdir ";
+	if (endOfDirectoryPath!=-1)
+	{
+		directoryFullPath=new char[endOfDirectoryPath+1];
+		strncpy(directoryFullPath,path.c_str(),endOfDirectoryPath);
+		directoryFullPath[endOfDirectoryPath]='\0';
+		systemCommand += directoryFullPath;
+		system(systemCommand.c_str());
+		delete []directoryFullPath;
+	}
 }
