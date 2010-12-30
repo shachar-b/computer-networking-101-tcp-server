@@ -2,6 +2,7 @@
 #include <iostream>
 using namespace std;
 // Don't forget to include "Ws2_32.lib" in the library list.
+#include <fstream>
 #include <winsock2.h>
 #include <string.h>
 #include <time.h>
@@ -39,6 +40,7 @@ struct request
 	int http_version_major;
 	int http_version_minor;
 	vector<header> headers;
+	string body;
 };
 
 struct SocketState
@@ -63,6 +65,7 @@ void receiveMessage(int index);
 void sendMessage(int index);
 void passSpaces(char * & buff);
 void readHeaders(char * & buffer,request & req);
+void readBody(char * & buffer,request & req);
 bool isLWS(char a);
 request makeNewReq();
 int Parse_HTTP_Header(char * buffer, request & reqinfo);
@@ -72,6 +75,8 @@ int actOnRequest(request & reqinfo);
 void putFile(request & reqinfo);
 void deleteFile(request & reqinfo);
 bool exists(const char* filePath);
+bool isWriteProtected(const char* filePath);
+void makePath(const string &path);
 bool operator==(const string& str,const char * str2);
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
@@ -483,6 +488,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 	{
 		return FAIL;
 	}
+	readBody(buffer,reqinfo);
 	return 0;
 		
 
@@ -493,7 +499,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo) {
 
 void passSpaces( char * & buff )
 {
-	while ( buff[0]!='\0' && isspace(buff[0]) )
+	while (buff!="" && isLWS(buff[0]) )
 		buff++;//read from next place
 }
 
@@ -569,6 +575,7 @@ request makeNewReq()
 	req.http_version_major=1;
 	req.http_version_minor=1;
 	req.uri="";
+	req.body="";
 	return req;
 }
 
@@ -626,7 +633,34 @@ int actOnRequest(request & reqinfo)
 
 void putFile(request & reqinfo)
 {
-
+	if (reqinfo.body.empty())
+	{
+		reqinfo.methodType=BAD_REQUEST;
+		return;
+	}
+	else
+	{
+		if (exists(reqinfo.uri.c_str()) && isWriteProtected(reqinfo.uri.c_str()))
+		{
+			reqinfo.methodType=Forbidden;
+		}
+		else
+		{
+			ofstream fileToPut(reqinfo.uri.c_str());
+			makePath(reqinfo.uri);//add the folder path if it needs to be added
+			fileToPut<<reqinfo.body.c_str();
+			if (fileToPut.fail())
+			{
+				reqinfo.methodType=Internal_Server_Error;
+				return;
+			}
+			else
+			{
+				reqinfo.methodType=OK;
+				return;
+			}
+		}
+	}
 }
 bool exists(const char* filePath)
 {
@@ -637,7 +671,7 @@ bool exists(const char* filePath)
 		return false;
 
 	//If the path referers to a directory it should also not exists.
-	return ( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
+	return true;// for now i allow folders//( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
 }
 bool isWriteProtected(const char* filePath)
 {
@@ -672,4 +706,24 @@ void deleteFile(request & req)
 		
 	}
 		
+}
+
+void readBody( char * & buffer,request & req )
+{
+	if (buffer==NULL || buffer[0]=='\0')
+	{
+		return;//nothing to read
+	}
+	passSpaces(buffer);//remove unnecessary date
+	while(buffer[0]!='\0')//end_of_file//
+	{
+		req.body.push_back(buffer[0]);
+		buffer++;
+	}	                                                                                                                   
+}
+
+void makePath( const string &path )
+{
+	//reateDirectory(path.c_str(),0);have fun
+
 }
