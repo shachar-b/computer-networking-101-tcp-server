@@ -86,6 +86,7 @@ void makePath(const string &path);
 bool FolderExists(char* strFolderName);
 bool operator==(const string& str,const char * str2);
 char* formatTime();
+int getFileSize(ifstream * file);
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
 int socketsCount = 0;
@@ -466,8 +467,13 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 	buffer++;
 	for(int i=0; i<len-1; i++)
 	{
-		if (buffer[0]=='/')
+	 if (strncmp(buffer,"%5C",3)==0)
+		{
 			reqinfo.uri.push_back('\\');
+			buffer+=2;
+			i+=2;
+		}
+
 		else
 			reqinfo.uri.push_back(buffer[0]);
 		buffer++;//next char
@@ -586,6 +592,7 @@ request makeNewReq()
 int makeresponse( request & reqinfo, char sendbuffer[] )
 {
 	string response="HTTP/";
+	bool shouldHaveBody=(reqinfo.methodType!=HEAD);
 	actOnRequest(reqinfo);//changes the req code to the send code(200,404,...)
 	response.push_back('0'+reqinfo.http_version_major);
 	response.push_back('.');
@@ -593,8 +600,14 @@ int makeresponse( request & reqinfo, char sendbuffer[] )
 	response+=ReqToString(reqinfo.methodType);
 	response+=CRLF;
 	writeDateHeader(response);
-	writeContentLengthHeader(response,0); //EDIT THIS
+	writeContentLengthHeader(response,reqinfo.body.length()); //EDIT THIS
 	response+=CRLF;//End reply.
+	if (shouldHaveBody)
+	{
+		response+=reqinfo.body;
+		response+=CRLF;
+
+	}
 	strcpy(sendbuffer,response.c_str());
 
 	return 1;
@@ -677,6 +690,7 @@ int actOnRequest(request & reqinfo)
 
 void getFile(request & reqinfo)
 {
+	int fileSize;
 	if (!exists(reqinfo.uri.c_str()))
 	{
 		reqinfo.methodType=Not_Found;
@@ -690,11 +704,17 @@ void getFile(request & reqinfo)
 		}
 		else
 		{
+			fileSize=getFileSize(&fileToGet);
+			for (int i=0; i<fileSize; i++)
+			{
+				reqinfo.body.push_back(fileToGet.get());
+			}
 			reqinfo.methodType=OK;
 			reqinfo.localResource=&fileToGet;
 		}
 	}
 }
+
 
 void putFile(request & reqinfo)
 {
@@ -808,4 +828,16 @@ void makePath( const string &path )
 bool FolderExists(char* strFolderName)
 {
 	return GetFileAttributesA(strFolderName) != INVALID_FILE_ATTRIBUTES;
+}
+
+int getFileSize(ifstream * file)
+{
+	int begin=file->tellg();
+	int end;
+	begin = file->tellg();
+	file->seekg (0, ios::end);
+	end = file->tellg();
+	file->seekg(begin,ios::beg);//go back to the place you start in
+	return end-begin;
+
 }
