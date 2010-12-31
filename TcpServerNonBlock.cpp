@@ -704,10 +704,12 @@ void getFile(request & reqinfo)
 		}
 		else
 		{
-			fileSize=getFileSize(&fileToGet);
-			for (int i=0; i<fileSize; i++)
+			//fileSize=getFileSize(&fileToGet); DELETE THIS LATER
+			char next=fileToGet.get();
+			while (next!=EOF)
 			{
-				reqinfo.body.push_back(fileToGet.get());
+				reqinfo.body.push_back(next);
+				next=fileToGet.get();
 			}
 			reqinfo.methodType=OK;
 			reqinfo.localResource=&fileToGet;
