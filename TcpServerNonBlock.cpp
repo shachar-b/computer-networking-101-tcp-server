@@ -42,7 +42,6 @@ struct request
 	int http_version_minor;
 	vector<header> headers;
 	string body;
-	ifstream* localResource;
 };
 
 struct SocketState
@@ -87,6 +86,7 @@ bool FolderExists(char* strFolderName);
 bool operator==(const string& str,const char * str2);
 char* formatTime();
 int getFileSize(ifstream * file);
+void CleanURI(string & uri);
 //Globals
 struct SocketState sockets[MAX_SOCKETS]={0};
 int socketsCount = 0;
@@ -467,17 +467,10 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 	buffer++;
 	for(int i=0; i<len-1; i++)
 	{
-	 if (strncmp(buffer,"%5C",3)==0)
-		{
-			reqinfo.uri.push_back('\\');
-			buffer+=2;
-			i+=2;
-		}
-
-		else
-			reqinfo.uri.push_back(buffer[0]);
+		reqinfo.uri.push_back(buffer[0]);
 		buffer++;//next char
 	}
+	CleanURI(reqinfo.uri);
 	if (buffer[0]!=' ')
 	{
 		reqinfo.methodType=BAD_REQUEST;
@@ -585,7 +578,6 @@ request makeNewReq()
 	req.http_version_minor=1;
 	req.uri="";
 	req.body="";
-	req.localResource=NULL;
 	return req;
 }
 
@@ -672,11 +664,10 @@ int actOnRequest(request & reqinfo)
 	switch(reqinfo.methodType)
 	{
 	case GET:
-		//change this please
 		getFile(reqinfo);
 		break;
 	case HEAD:
-		reqinfo.methodType=NOT_IMPLEMENTED;
+		getFile(reqinfo); //Using same function, since function ignores body on HEAD.
 		break;
 	case PUT:
 		putFile(reqinfo);
@@ -712,7 +703,6 @@ void getFile(request & reqinfo)
 				next=fileToGet.get();
 			}
 			reqinfo.methodType=OK;
-			reqinfo.localResource=&fileToGet;
 		}
 	}
 }
@@ -842,4 +832,32 @@ int getFileSize(ifstream * file)
 	file->seekg(begin,ios::beg);//go back to the place you start in
 	return end-begin;
 
+}
+
+void CleanURI(string & uri)
+{
+	char asciinum[3] = {0};
+	int i = 0, c;
+	char* buffer=new char [(uri.length())+1];
+	strcpy(buffer,uri.c_str());
+
+	while ( buffer[i] )
+	{
+		if ( buffer[i] == '+' )
+			buffer[i] = ' ';
+		else if (buffer[i] == '/')
+			buffer[i] = '\\';
+		else if ( buffer[i] == '%' ) {
+			asciinum[0] = buffer[i+1];
+			asciinum[1] = buffer[i+2];
+			buffer[i] = (int)strtol(asciinum, NULL, 16);
+			c = i+1;
+			do {
+				buffer[c] = buffer[c+2];
+			} while ( buffer[2+(c++)] );
+		}
+		++i;
+	}
+	uri=buffer;
+	delete []buffer;
 }
