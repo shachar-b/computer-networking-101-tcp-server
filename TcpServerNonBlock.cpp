@@ -797,7 +797,8 @@ void makePath( const string &path )
 		directoryFullPath[endOfDirectoryPath]='\0';
 		if (!FolderExists(directoryFullPath))
 		{
-			systemCommand += directoryFullPath;
+			systemCommand +=" ";
+			systemCommand+=directoryFullPath;
 			system(systemCommand.c_str());
 		}
 		delete []directoryFullPath;
