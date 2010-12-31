@@ -72,6 +72,8 @@ request makeNewReq();
 int Parse_HTTP_Header(char * buffer, request & reqinfo);
 int makeresponse(request & reqinfo, char sendbuffer[]);
 void writeDateHeader(string & response);
+void writeContentLengthHeader(string & response, int contentLength);
+int numOfDigits(int num);
 string ReqToString (eReqType methodType);
 int actOnRequest(request & reqinfo);
 void putFile(request & reqinfo);
@@ -376,11 +378,9 @@ void receiveMessage(int index)
 		request req=makeNewReq();
 		if (sockets[index].len > 0)
 		{
-	//		char* bufferPosSaver = &(sockets[index].buffer[0]);
 			Parse_HTTP_Header(sockets[index].buffer,req);
 			sockets[index].send=SEND;
 			makeresponse(req,sockets[index].sendBuffer);//EDIT_THIS?
-	//		sockets[index].buffer=bufferPosSaver;
 		}
 	}
 }
@@ -475,7 +475,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 		reqinfo.methodType=BAD_REQUEST;
 		return FAIL;
 	}
-	buffer++;//pass CRLF
+	buffer++;//pass SP
 	//Parse HTTP version
 	if ( strncmp(buffer, "HTTP/1.0",8)==0 )
 	{
@@ -537,7 +537,7 @@ void readHeaders( char * & buffer,request & req )
 		buffer=endptr+1;//move past :
 		passSpaces(buffer);
 		endptr = strchr(buffer,'\n');//read until new line
-		for (int i=0;i<endptr-buffer;i++)
+		for (int i=0;i<endptr-buffer-1;i++)
 		{
 			temp2.push_back(buffer[i]);
 		}
@@ -566,7 +566,7 @@ void readHeaders( char * & buffer,request & req )
 
 bool isLWS(char a)
 {
-	return (a=='\n'||a=='\t' || a==' ');
+	return (a=='\n'||a=='\t' || a==' ' || a=='\r');
 }
 bool operator==(const string& str,const char * str2)
 {
@@ -594,6 +594,7 @@ int makeresponse( request & reqinfo, char sendbuffer[] )
 	response+=ReqToString(reqinfo.methodType);
 	response+=CRLF;
 	writeDateHeader(response);
+	writeContentLengthHeader(response,0); //EDIT THIS
 	response+=CRLF;//End reply.
 	strcpy(sendbuffer,response.c_str());
 	
@@ -605,6 +606,28 @@ void writeDateHeader(string & response)
 	response+="Date: ";
 	response+=formatTime();
 	response+=CRLF;
+}
+
+void writeContentLengthHeader(string & response, int contentLength) //EDIT THIS
+{
+	int res=numOfDigits(contentLength);
+	char* temp = new char [numOfDigits(contentLength)+1];
+	temp = _itoa(contentLength,temp,10);
+ 	response+="Content-Length: ";
+	response+=temp;
+	response+=CRLF;
+	delete []temp;
+}
+
+int numOfDigits(int num)
+{
+	int result=1;
+	while (num>9)
+	{
+		result++;
+		num/=10;
+	}
+	return result;
 }
 
 char* formatTime()
