@@ -42,6 +42,7 @@ struct request
 	int http_version_minor;
 	vector<header> headers;
 	string body;
+	ifstream* localResource;
 };
 
 struct SocketState
@@ -76,6 +77,7 @@ void writeContentLengthHeader(string & response, int contentLength);
 int numOfDigits(int num);
 string ReqToString (eReqType methodType);
 int actOnRequest(request & reqinfo);
+void getFile(request & reqinfo);
 void putFile(request & reqinfo);
 void deleteFile(request & reqinfo);
 bool exists(const char* filePath);
@@ -99,23 +101,23 @@ void main()
 		return; //Upon discovering an error - quit the application.
 
 
-    // Listen on the Socket for incoming connections.
+	// Listen on the Socket for incoming connections.
 	// The listen system call determines the length of the queue of incoming connection
 	// requests for a socket by setting the backlog parameter.
 
-    if (SOCKET_ERROR == listen(listenSocket, 5))
+	if (SOCKET_ERROR == listen(listenSocket, 5))
 	{
 		cout << "Web Server: Error at listen(): " << WSAGetLastError() << endl;
-        closesocket(listenSocket);
+		closesocket(listenSocket);
 		WSACleanup();
-        return;
+		return;
 	}
 
 	addSocket(listenSocket, LISTEN);
 
-    // Accept connections and handle them one by one.
-    // The accept() system call returns another socket descriptor while
-    // continuing to listen on the listen socket. 
+	// Accept connections and handle them one by one.
+	// The accept() system call returns another socket descriptor while
+	// continuing to listen on the listen socket. 
 
 	while (true)
 	{
@@ -329,8 +331,8 @@ void acceptConnection(int index)
 
 	if (INVALID_SOCKET == msgSocket)
 	{ 
-		 cout << "Web Server: Error at accept(): " << WSAGetLastError() << endl; 		 
-		 return;
+		cout << "Web Server: Error at accept(): " << WSAGetLastError() << endl; 		 
+		return;
 	}
 
 	cout << "Web Server: Client "<<inet_ntoa(from.sin_addr)<<":"<<ntohs(from.sin_port)<<" is connected." << endl;
@@ -389,7 +391,7 @@ void sendMessage(int index)
 {
 	int bytesSent = 0;
 	SOCKET msgSocket = sockets[index].id;
-	
+
 
 	bytesSent = send(msgSocket, sockets[index].sendBuffer, (int)strlen(sockets[index].sendBuffer), 0);
 	if (SOCKET_ERROR == bytesSent)
@@ -547,32 +549,28 @@ void readHeaders( char * & buffer,request & req )
 		{
 			req.headers.push_back(makeHeader(temp1, temp2));
 		}
-		
-
-
-
-			if (buffer!=NULL)
-			{
-				endptr = strchr(buffer, ':');
-			}
-			else
-			{
-				return;
-			}
-			
+		if (buffer!=NULL)
+		{
+			endptr = strchr(buffer, ':');
+		}
+		else
+		{
+			return;
+		}
 	}
-
 }
 
 bool isLWS(char a)
 {
 	return (a=='\n'||a=='\t' || a==' ' || a=='\r');
 }
+
 bool operator==(const string& str,const char * str2)
 {
 	const char * temp=str.c_str();
 	return strcmp(temp,str2)==0;
 }
+
 request makeNewReq()
 {
 	request req;
@@ -581,6 +579,7 @@ request makeNewReq()
 	req.http_version_minor=1;
 	req.uri="";
 	req.body="";
+	req.localResource=NULL;
 	return req;
 }
 
@@ -597,7 +596,7 @@ int makeresponse( request & reqinfo, char sendbuffer[] )
 	writeContentLengthHeader(response,0); //EDIT THIS
 	response+=CRLF;//End reply.
 	strcpy(sendbuffer,response.c_str());
-	
+
 	return 1;
 }
 
@@ -613,7 +612,7 @@ void writeContentLengthHeader(string & response, int contentLength) //EDIT THIS
 	int res=numOfDigits(contentLength);
 	char* temp = new char [numOfDigits(contentLength)+1];
 	temp = _itoa(contentLength,temp,10);
- 	response+="Content-Length: ";
+	response+="Content-Length: ";
 	response+=temp;
 	response+=CRLF;
 	delete []temp;
@@ -661,7 +660,7 @@ int actOnRequest(request & reqinfo)
 	{
 	case GET:
 		//change this please
-		reqinfo.methodType=NOT_IMPLEMENTED;
+		getFile(reqinfo);
 		break;
 	case HEAD:
 		reqinfo.methodType=NOT_IMPLEMENTED;
@@ -672,11 +671,30 @@ int actOnRequest(request & reqinfo)
 	case DELETE_REQ:
 		deleteFile(reqinfo);
 		break;
-
 	}
 	return 1;
 }
 
+void getFile(request & reqinfo)
+{
+	if (!exists(reqinfo.uri.c_str()))
+	{
+		reqinfo.methodType=Not_Found;
+	}
+	else
+	{
+		ifstream fileToGet(reqinfo.uri.c_str(),ios::in);
+		if (fileToGet.fail())
+		{
+			reqinfo.methodType=Internal_Server_Error;
+		}
+		else
+		{
+			reqinfo.methodType=OK;
+			reqinfo.localResource=&fileToGet;
+		}
+	}
+}
 
 void putFile(request & reqinfo)
 {
@@ -709,6 +727,7 @@ void putFile(request & reqinfo)
 		}
 	}
 }
+
 bool exists(const char* filePath)
 {
 	//This will get the file attributes bitlist of the file
@@ -720,6 +739,7 @@ bool exists(const char* filePath)
 	//If the path referers to a directory it should also not exists.
 	return true;// for now i allow folders//( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
 }
+
 bool isWriteProtected(const char* filePath)
 {
 	//This will get the file attributes bitlist of the file
@@ -730,11 +750,9 @@ bool isWriteProtected(const char* filePath)
 
 void deleteFile(request & req)
 {
-
 	if ( !exists(req.uri.c_str()) ) //file dosent exsist
 	{
 		req.methodType=Not_Found;
-
 	}
 	else
 	{
@@ -744,15 +762,12 @@ void deleteFile(request & req)
 				req.methodType=Internal_Server_Error;
 			else
 				req.methodType=OK;
-			
 		}
 		else
 		{
 			req.methodType=Forbidden;
 		}
-		
 	}
-		
 }
 
 void readBody( char * & buffer,request & req )
