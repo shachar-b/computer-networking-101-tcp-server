@@ -1,101 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS //Suppress warnings on strcpy,ctime,itoa etc...
-#include <iostream>
-using namespace std;
-// Don't forget to include "Ws2_32.lib" in the library list.
-#include <fstream>
-#include <winsock2.h>
-#include <string.h>
-#include <time.h>
-#include <vector>
-#include <winbase.h>
-#include <windows.h>
-#pragma comment(lib, "Ws2_32.lib")
-#define CRLF "\r\n"
-
-#define DEBUG_OUTGOING_MESSAGE 0 //Use these to see content of messages sent
-#define DEBUG_INCOMING_MESSAGE 0 //or received.
-#define FAIL -1
-#define TIMEOUT 0
-
-//Consts
-const int LISTEN_PORT = 80;
-const int MAX_SOCKETS = 60;
-const int EMPTY = 0;
-const int LISTEN  = 1;
-const int RECEIVE = 2;
-const int IDLE = 3;
-const int SEND = 4;
-//Services
-const int SEND_TIME = 1;
-const int SEND_SECONDS = 2;
-
-enum eReqType {GET, HEAD, PUT, DELETE_REQ,OK=200,BAD_REQUEST=400,Forbidden=403,Not_Found=404,Request_Too_Large=413,Internal_Server_Error=500,NOT_IMPLEMENTED=501};
-
-//Structs
-struct header{
-	string name;
-	string val;
-};
-
-struct request
-{
-	eReqType methodType;
-	string uri;//path
-	int http_version_major;
-	int http_version_minor;
-	vector<header> headers;
-	string body;
-};
-
-struct SocketState
-{
-	SOCKET id;			// Socket handle
-	int	recv;			// Receiving?
-	int	send;			// Sending?
-	int sendSubType;	// Sending sub-type
-	char buffer[4096];
-	string recvBuffer;
-	string sendBuffer;
-	int len;
-};
-
-//Function declarations
-void initWinsock();
-SOCKET setupSocket();
-bool closeWinsock(SOCKET listenSocket);
-bool addSocket(SOCKET id, int what);
-void removeSocket(int index);
-void acceptConnection(int index);
-void receiveMessage(int index);
-void sendMessage(int index);
-void passSpaces(char * & buff);
-void readHeaders(char * & buffer,request & req);
-void readBody(char * & buffer,request & req);
-bool isLWS(char a);
-request makeNewReq();
-int Parse_HTTP_Header(char * buffer, request & reqinfo);
-int makeresponse(request & reqinfo, string &sendbuffer);
-void writeDateHeader(string & response);
-void writeContentLengthHeader(string & response, int contentLength);
-int numOfDigits(int num);
-string ReqToString (eReqType methodType);
-int actOnRequest(request & reqinfo);
-void getFile(request & reqinfo);
-void putFile(request & reqinfo);
-void deleteFile(request & reqinfo);
-bool exists(const char* filePath);
-bool isWriteProtected(const char* filePath);
-void makePath(const string &path);
-bool FolderExists(char* strFolderName);
-bool operator==(const string& str,const char * str2);
-char* formatTime();
-int getFileSize(ifstream * file);
-void CleanURI(string & uri);
-//Globals
-struct SocketState sockets[MAX_SOCKETS]={0};
-int socketsCount = 0;
-
-
+#include "TcpServerNonBlock.h"
 //Main
 //------------------------------------------------------------------------------//
 void main() 
@@ -532,12 +435,6 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 	return 0;
 }
 
-void passSpaces( char * & buff )
-{
-	while (buff!="" && isLWS(buff[0]) )
-		buff++;//read from next place
-}
-
 header makeHeader(const string & name, const string & Val )
 {
 	header head;
@@ -586,11 +483,6 @@ void readHeaders( char * & buffer,request & req )
 			return;
 		}
 	}
-}
-
-bool isLWS(char a)
-{
-	return (a=='\n'||a=='\t' || a==' ' || a=='\r');
 }
 
 bool operator==(const string& str,const char * str2)
@@ -651,28 +543,6 @@ void writeContentLengthHeader(string & response, int contentLength) //EDIT THIS
 	delete []temp;
 }
 
-int numOfDigits(int num)
-{
-	int result=1;
-	while (num>9)
-	{
-		result++;
-		num/=10;
-	}
-	return result;
-}
-
-char* formatTime()
-{
-	char* timeStr;
-	// Get the current time.
-	time_t timer;
-	time(&timer);
-	// Parse the current time to printable string.
-	timeStr=_strdup(ctime(&timer));
-	timeStr[strlen(timeStr)-1] = 0; //to remove the new-line from the created string
-	return timeStr;
-}
 
 string ReqToString (eReqType methodType)
 {
@@ -723,7 +593,6 @@ void getFile(request & reqinfo)
 		}
 		else
 		{
-			//fileSize=getFileSize(&fileToGet); DELETE THIS LATER
 			char next=fileToGet.get();
 			while (next!=EOF)
 			{
@@ -768,26 +637,6 @@ void putFile(request & reqinfo)
 	}
 }
 
-bool exists(const char* filePath)
-{
-	//This will get the file attributes bitlist of the file
-	DWORD fileAtt = GetFileAttributesA(filePath);
-	//If an error occurred it will equal to INVALID_FILE_ATTRIBUTES
-	if(fileAtt == INVALID_FILE_ATTRIBUTES)
-		return false;
-
-	//If the path referers to a directory it should also not exists.
-	return true;// for now i allow folders//( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
-}
-
-bool isWriteProtected(const char* filePath)
-{
-	//This will get the file attributes bitlist of the file
-	DWORD fileAtt = GetFileAttributesA(filePath);
-	//If the path referers to a directory it should also not exists.
-	return ( ( fileAtt & FILE_ATTRIBUTE_READONLY ) != 0 ); 
-}
-
 void deleteFile(request & req)
 {
 	if ( !exists(req.uri.c_str()) ) //file dosent exsist
@@ -822,44 +671,6 @@ void readBody( char * & buffer,request & req )
 		req.body.push_back(buffer[0]);
 		buffer++;
 	}	                                                                                                                   
-}
-
-void makePath( const string &path )
-{
-	char* backSlash = "\\"; //Using char* for compatability with find_last_of
-	char* directoryFullPath;
-	int endOfDirectoryPath = path.find_last_of(backSlash);
-	string systemCommand="mkdir ";
-	if (endOfDirectoryPath!=-1)
-	{
-		directoryFullPath=new char[endOfDirectoryPath+1];
-		strncpy(directoryFullPath,path.c_str(),endOfDirectoryPath);
-		directoryFullPath[endOfDirectoryPath]='\0';
-		if (!FolderExists(directoryFullPath))
-		{
-			systemCommand +=" ";
-			systemCommand+=directoryFullPath;
-			system(systemCommand.c_str());
-		}
-		delete []directoryFullPath;
-	}
-}
-
-bool FolderExists(char* strFolderName)
-{
-	return GetFileAttributesA(strFolderName) != INVALID_FILE_ATTRIBUTES;
-}
-
-int getFileSize(ifstream * file)
-{
-	int begin=file->tellg();
-	int end;
-	begin = file->tellg();
-	file->seekg (0, ios::end);
-	end = file->tellg();
-	file->seekg(begin,ios::beg);//go back to the place you start in
-	return end-begin;
-
 }
 
 void CleanURI(string & uri)
