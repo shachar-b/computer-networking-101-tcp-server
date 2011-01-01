@@ -51,7 +51,7 @@ struct SocketState
 	int	send;			// Sending?
 	int sendSubType;	// Sending sub-type
 	char buffer[512];
-	char sendBuffer[512];
+	string sendBuffer;
 	int len;
 };
 
@@ -70,7 +70,7 @@ void readBody(char * & buffer,request & req);
 bool isLWS(char a);
 request makeNewReq();
 int Parse_HTTP_Header(char * buffer, request & reqinfo);
-int makeresponse(request & reqinfo, char sendbuffer[]);
+int makeresponse(request & reqinfo, string &sendbuffer);
 void writeDateHeader(string & response);
 void writeContentLengthHeader(string & response, int contentLength);
 int numOfDigits(int num);
@@ -394,14 +394,14 @@ void sendMessage(int index)
 	SOCKET msgSocket = sockets[index].id;
 
 
-	bytesSent = send(msgSocket, sockets[index].sendBuffer, (int)strlen(sockets[index].sendBuffer), 0);
+	bytesSent = send(msgSocket, sockets[index].sendBuffer.c_str(),sockets[index].sendBuffer.length(), 0);
 	if (SOCKET_ERROR == bytesSent)
 	{
 		cout << "Web Server: Error at send(): " << WSAGetLastError() << endl;	
 		return;
 	}
 
-	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<strlen(sockets[index].sendBuffer)<<" bytes of \"\n"<<sockets[index].sendBuffer<<"\n\" message.\n";	
+	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<sockets[index].len<<" bytes of \"\n"<<sockets[index].sendBuffer.c_str()<<"\n\" message.\n";	
 
 	sockets[index].send = IDLE;
 	sockets[index].len=0; //Finished with this transaction - reset length of buffer.
@@ -581,9 +581,9 @@ request makeNewReq()
 	return req;
 }
 
-int makeresponse( request & reqinfo, char sendbuffer[] )
+int makeresponse( request & reqinfo, string &response )
 {
-	string response="HTTP/";
+	response="HTTP/";
 	bool shouldHaveBody=(reqinfo.methodType!=HEAD);
 	actOnRequest(reqinfo);//changes the req code to the send code(200,404,...)
 	response.push_back('0'+reqinfo.http_version_major);
@@ -600,7 +600,6 @@ int makeresponse( request & reqinfo, char sendbuffer[] )
 		response+=CRLF;
 
 	}
-	strcpy(sendbuffer,response.c_str());
 
 	return 1;
 }
@@ -681,7 +680,6 @@ int actOnRequest(request & reqinfo)
 
 void getFile(request & reqinfo)
 {
-	int fileSize;
 	if (!exists(reqinfo.uri.c_str()))
 	{
 		reqinfo.methodType=Not_Found;
@@ -836,28 +834,43 @@ int getFileSize(ifstream * file)
 
 void CleanURI(string & uri)
 {
-	char asciinum[3] = {0};
-	int i = 0, c;
-	char* buffer=new char [(uri.length())+1];
-	strcpy(buffer,uri.c_str());
-
-	while ( buffer[i] )
+	try
 	{
-		if ( buffer[i] == '+' )
-			buffer[i] = ' ';
-		else if (buffer[i] == '/')
-			buffer[i] = '\\';
-		else if ( buffer[i] == '%' ) {
-			asciinum[0] = buffer[i+1];
-			asciinum[1] = buffer[i+2];
-			buffer[i] = (int)strtol(asciinum, NULL, 16);
-			c = i+1;
-			do {
-				buffer[c] = buffer[c+2];
-			} while ( buffer[2+(c++)] );
+		char asciinum[3] = {0};
+		int i = 0, c;
+		char* buffer=new char [(uri.length())+1];
+		strcpy(buffer,uri.c_str());
+		if (buffer==NULL)
+		{
+			cerr<<"god dammit";
 		}
+
+		while ( buffer[i] )
+		{
+			if ( buffer[i] == '+' )
+				buffer[i] = ' ';
+			else if (buffer[i] == '/')
+				buffer[i] = '\\';
+			else if ( buffer[i] == '%' ) 
+			{
+				asciinum[0] = buffer[i+1];
+				asciinum[1] = buffer[i+2];
+				buffer[i] = (int)strtol(asciinum, NULL, 16);
+				c = i+1;
+				do
+				{
+					buffer[c] = buffer[c+2];
+				} while ( buffer[2+(c++)] );
+			}
+		
 		++i;
+		}
+		uri=buffer;
+		delete []buffer;
+		
 	}
-	uri=buffer;
-	delete []buffer;
+	catch(...)
+	{
+		cerr<<"error in clean uri "<<uri.c_str();
+	}
 }
