@@ -12,9 +12,12 @@ using namespace std;
 #pragma comment(lib, "Ws2_32.lib")
 #define CRLF "\r\n"
 
+#define DEBUG_OUTGOING_MESSAGE 0 //Use these to see content of messages sent
+#define DEBUG_INCOMING_MESSAGE 0 //or received.
+#define FAIL -1
+#define TIMEOUT 0
+
 //Consts
-
-
 const int LISTEN_PORT = 80;
 const int MAX_SOCKETS = 60;
 const int EMPTY = 0;
@@ -26,7 +29,7 @@ const int SEND = 4;
 const int SEND_TIME = 1;
 const int SEND_SECONDS = 2;
 
-enum eReqType {GET, HEAD, PUT, DELETE_REQ,OK=200,BAD_REQUEST=400,Forbidden=403,Not_Found=404,Internal_Server_Error=500,NOT_IMPLEMENTED=501};
+enum eReqType {GET, HEAD, PUT, DELETE_REQ,OK=200,BAD_REQUEST=400,Forbidden=403,Not_Found=404,Request_Too_Large=413,Internal_Server_Error=500,NOT_IMPLEMENTED=501};
 
 //Structs
 struct header{
@@ -50,7 +53,8 @@ struct SocketState
 	int	recv;			// Receiving?
 	int	send;			// Sending?
 	int sendSubType;	// Sending sub-type
-	char buffer[512];
+	char buffer[4096];
+	string recvBuffer;
 	string sendBuffer;
 	int len;
 };
@@ -122,6 +126,14 @@ void main()
 
 	while (true)
 	{
+		struct timeval tv;
+
+
+		/*  Set timeout to 5 seconds  */
+
+		tv.tv_sec  = 120;
+		tv.tv_usec = 0;
+
 		// The select function determines the status of one or more sockets,
 		// waiting if necessary, to perform asynchronous I/O. Use fd_sets for
 		// sets of handles for reading, writing and exceptions. select gets "timeout" for waiting
@@ -154,10 +166,16 @@ void main()
 		// And as written above the last is a timeout, hence we are blocked if nothing happens.
 
 		int nfd;
-		nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
+		nfd = select(0, &waitRecv, &waitSend, NULL, &tv);
 		if (nfd == SOCKET_ERROR)
 		{
 			cout <<"Web Server: Error at select(): " << WSAGetLastError() << endl;
+			WSACleanup();
+			return;
+		}
+		else if (nfd == TIMEOUT)
+		{
+			cout<< "TIMEOUT: Closing connection!"<<endl;
 			WSACleanup();
 			return;
 		}
@@ -357,7 +375,7 @@ void receiveMessage(int index)
 {
 	SOCKET msgSocket = sockets[index].id;
 	int len = sockets[index].len;
-	int bytesRecv = recv(msgSocket, &sockets[index].buffer[len], sizeof(sockets[index].buffer) - len, 0);
+	int bytesRecv = recv(msgSocket, &sockets[index].buffer[0], sizeof(sockets[index].buffer) -1/*minus 1 since we add '\0' later*/, 0);
 	if (SOCKET_ERROR == bytesRecv)
 	{
 		cout << "Web Server: Error at recv(): " << WSAGetLastError() << endl;
@@ -375,15 +393,22 @@ void receiveMessage(int index)
 
 	else
 	{
-		sockets[index].buffer[len + bytesRecv] = '\0'; //add the null-terminating to make it a string
-		cout<<"Web Server: Received: "<<bytesRecv<<" bytes of \n\"\n"<<&sockets[index].buffer[len]<<"\" message.\n";
+		sockets[index].buffer[bytesRecv] = '\0'; //add the null-terminating to make it a string
+		sockets[index].recvBuffer+=sockets[index].buffer;
+		if (DEBUG_INCOMING_MESSAGE)
+			cout<<"Web Server: Received: "<<bytesRecv<<" bytes of \n\"\n"<<&sockets[index].buffer[len]<<"\" message.\n";
+		else
+			cout<<"Web Server: Received: "<<bytesRecv<<" bytes of message." << endl;
 		sockets[index].len += bytesRecv;
 		request req=makeNewReq();
-		if (sockets[index].len > 0)
+		if (sockets[index].len > 0 && bytesRecv+1<sizeof(sockets[index].buffer)) //if rcvd last chunk of message - parse and reply
 		{
-			Parse_HTTP_Header(sockets[index].buffer,req);
+			CHAR* temp = _strdup(sockets[index].recvBuffer.c_str());
+			sockets[index].recvBuffer.clear();
+			Parse_HTTP_Header(temp,req);
 			sockets[index].send=SEND;
-			makeresponse(req,sockets[index].sendBuffer);//EDIT_THIS?
+			makeresponse(req,sockets[index].sendBuffer);
+			delete []temp;
 		}
 	}
 }
@@ -391,23 +416,27 @@ void receiveMessage(int index)
 void sendMessage(int index)
 {
 	int bytesSent = 0;
+	int bytesToSend=sockets[index].sendBuffer.length();
 	SOCKET msgSocket = sockets[index].id;
 
 
-	bytesSent = send(msgSocket, sockets[index].sendBuffer.c_str(),sockets[index].sendBuffer.length(), 0);
+	bytesSent = send(msgSocket, sockets[index].sendBuffer.c_str(),bytesToSend, 0);
 	if (SOCKET_ERROR == bytesSent)
 	{
 		cout << "Web Server: Error at send(): " << WSAGetLastError() << endl;	
 		return;
 	}
 
-	cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<sockets[index].len<<" bytes of \"\n"<<sockets[index].sendBuffer.c_str()<<"\n\" message.\n";	
+	if (DEBUG_OUTGOING_MESSAGE)
+		cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<bytesToSend<<" bytes of \"\n"<<sockets[index].sendBuffer.c_str()<<"\n\" message.\n";	
+	else
+		cout<<"Web Server: Sent: "<<bytesSent<<"\\"<<bytesToSend<<" bytes of message" << endl;
+
 
 	sockets[index].send = IDLE;
 	sockets[index].len=0; //Finished with this transaction - reset length of buffer.
 }
 
-#define FAIL -1
 /*  Parses a string and updates a request
 information structure if necessary.    */
 
@@ -495,7 +524,7 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 	}
 	buffer+=8;//jump past http/1.*
 	readHeaders(buffer,reqinfo);
-	if (reqinfo.methodType==BAD_REQUEST)
+	if (reqinfo.methodType==BAD_REQUEST || reqinfo.methodType==Request_Too_Large)
 	{
 		return FAIL;
 	}
@@ -653,6 +682,7 @@ string ReqToString (eReqType methodType)
 	case BAD_REQUEST : return " 400 Bad Request";
 	case Forbidden : return " 403 Forbidden";
 	case Not_Found : return " 404 Not Found";
+	case Request_Too_Large : return " 413 Request Entity Too Large";
 	case NOT_IMPLEMENTED : return " 501 Not Implemented";
 	default:return " 500 Internal Server Error"; // if the method type is none of the above an error has occared
 	}
