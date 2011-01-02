@@ -51,7 +51,7 @@ struct SocketState
 	int	recv;			// Receiving?
 	int	send;			// Sending?
 	int sendSubType;	// Sending sub-type
-	char buffer[4096];
+	char buffer[4096];  //4k
 	string recvBuffer;
 	string sendBuffer;
 	int len;
@@ -69,7 +69,7 @@ void sendMessage(int index);
 void readHeaders(char * & buffer,request & req);
 void readBody(char * & buffer,request & req);
 request makeNewReq();
-int Parse_HTTP_Header(char * buffer, request & reqinfo);
+int ParseHTTPMessage(char * buffer, request & reqinfo);
 int makeresponse(request & reqinfo, string &sendbuffer);
 void writeDateHeader(string & response);
 void writeContentLengthHeader(string & response, int contentLength);

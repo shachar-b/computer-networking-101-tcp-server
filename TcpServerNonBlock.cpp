@@ -29,13 +29,7 @@ void main()
 
 	while (true)
 	{
-		struct timeval tv;
 
-
-		/*  Set timeout to 5 seconds  */
-
-		tv.tv_sec  = 120;
-		tv.tv_usec = 0;
 
 		// The select function determines the status of one or more sockets,
 		// waiting if necessary, to perform asynchronous I/O. Use fd_sets for
@@ -69,20 +63,14 @@ void main()
 		// And as written above the last is a timeout, hence we are blocked if nothing happens.
 
 		int nfd;
-		nfd = select(0, &waitRecv, &waitSend, NULL, &tv);
+		nfd = select(0, &waitRecv, &waitSend, NULL, NULL);
 		if (nfd == SOCKET_ERROR)
 		{
 			cout <<"Web Server: Error at select(): " << WSAGetLastError() << endl;
 			WSACleanup();
 			return;
 		}
-		else if (nfd == TIMEOUT)
-		{
-			cout<< "TIMEOUT: Closing connection!"<<endl;
-			WSACleanup();
-			return;
-		}
-
+		
 
 		for (int i = 0; i < MAX_SOCKETS && nfd > 0; i++)
 		{
@@ -121,6 +109,13 @@ void main()
 
 //Function implementations:
 //------------------------------------------------------------------------------------//
+//************************************
+// Method:    initWinsock - initilize winsock
+// FullName:  initWinsock
+// Access:    public 
+// Returns:   void
+// Qualifier:
+//************************************
 void initWinsock()
 {
 	// Initialize Winsock (Windows Sockets).
@@ -141,6 +136,13 @@ void initWinsock()
 	}
 }
 
+//************************************
+// Method:    setupSocket
+// FullName:  setupSocket
+// Access:    public 
+// Returns:   SOCKET
+// Qualifier:
+//************************************
 SOCKET setupSocket()
 {
 	// Server side:
@@ -212,6 +214,14 @@ SOCKET setupSocket()
 	return listenSocket;
 }
 
+//************************************
+// Method:    closeWinsock- close the connection for a given socket
+// FullName:  closeWinsock
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: SOCKET listenSocket
+//************************************
 bool closeWinsock(SOCKET listenSocket){
 	// Closing connections and Winsock.
 	cout<<"Web Server: Closing Connection.\n";
@@ -220,6 +230,15 @@ bool closeWinsock(SOCKET listenSocket){
 	return false;
 }
 
+//************************************
+// Method:    addSocket- add a new socket
+// FullName:  addSocket
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: SOCKET id-the socket id
+// Parameter: int what
+//************************************
 bool addSocket(SOCKET id, int what)
 {
 	for (int i = 0; i < MAX_SOCKETS; i++)
@@ -237,6 +256,14 @@ bool addSocket(SOCKET id, int what)
 	return (false);
 }
 
+//************************************
+// Method:    removeSocket
+// FullName:  removeSocket removes a socket in the given place
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: int index
+//************************************
 void removeSocket(int index)
 {
 	sockets[index].recv = EMPTY;
@@ -244,6 +271,14 @@ void removeSocket(int index)
 	socketsCount--;
 }
 
+//************************************
+// Method:    acceptConnection
+// FullName:  acceptConnection - accept a connection from a user
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: int index
+//************************************
 void acceptConnection(int index)
 {
 	SOCKET id = sockets[index].id;
@@ -274,6 +309,14 @@ void acceptConnection(int index)
 	return;
 }
 
+//************************************
+// Method:    receiveMessage- recive a message waiting in socket number index
+// FullName:  receiveMessage
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: int index - a socket number
+//************************************
 void receiveMessage(int index)
 {
 	SOCKET msgSocket = sockets[index].id;
@@ -308,7 +351,7 @@ void receiveMessage(int index)
 		{
 			CHAR* temp = _strdup(sockets[index].recvBuffer.c_str());
 			sockets[index].recvBuffer.clear();
-			Parse_HTTP_Header(temp,req);
+			ParseHTTPMessage(temp,req);
 			sockets[index].send=SEND;
 			makeresponse(req,sockets[index].sendBuffer);
 			delete []temp;
@@ -316,6 +359,14 @@ void receiveMessage(int index)
 	}
 }
 
+//************************************
+// Method:    sendMessage - sends a message waiting in the given socket number
+// FullName:  sendMessage
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: int index- a socket number
+//************************************
 void sendMessage(int index)
 {
 	int bytesSent = 0;
@@ -343,15 +394,19 @@ void sendMessage(int index)
 /*  Parses a string and updates a request
 information structure if necessary.    */
 
-int Parse_HTTP_Header(char * buffer, request & reqinfo)
+//************************************
+// Method:    ParseHTTPMessage- parse an http message into a request sturct
+// FullName:  ParseHTTPMessage
+// Access:    public 
+// Returns:   int - Fail if the message isnt lagit
+// Qualifier:
+// Parameter: char * buffer- a non null string
+// Parameter: request & reqinfo- a request for output
+//************************************
+int ParseHTTPMessage(char * buffer, request & reqinfo)
 {
 	char      *endptr;
 	int        len;
-
-
-	/*  If first_header is 0, this is the first line of
-	the HTTP request, so this should be the request line.  */
-
 
 	/*  Get the request method, which is case-sensitive. This
 	version of the server only supports the GET, HEAD, PUT, DELETE
@@ -435,6 +490,15 @@ int Parse_HTTP_Header(char * buffer, request & reqinfo)
 	return 0;
 }
 
+//************************************
+// Method:    makeHeader -makes a new header
+// FullName:  makeHeader
+// Access:    public 
+// Returns:   header
+// Qualifier:
+// Parameter: const string & name- a string for the header name
+// Parameter: const string & Val - the header value
+//************************************
 header makeHeader(const string & name, const string & Val )
 {
 	header head;
@@ -442,6 +506,16 @@ header makeHeader(const string & name, const string & Val )
 	head.val=Val;
 	return head;
 }
+
+//************************************
+// Method:    readHeaders- read the headers from the message body
+// FullName:  readHeaders
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: char *  & buffer- a non null string
+// Parameter: request & req- a request
+//************************************
 void readHeaders( char * & buffer,request & req )
 {
 	char * endptr;
@@ -469,7 +543,7 @@ void readHeaders( char * & buffer,request & req )
 			temp2.push_back(buffer[i]);
 		}
 		buffer=endptr+1;
-		//we only kepp the following headers, all others are ignored
+		//we only keep the following headers, all others are ignored
 		if (temp1=="Content-Length" || temp1=="Expect" ||temp1=="Host"||temp1=="User-Agent"|| temp1=="Connection")
 		{
 			req.headers.push_back(makeHeader(temp1, temp2));
@@ -485,12 +559,28 @@ void readHeaders( char * & buffer,request & req )
 	}
 }
 
+//************************************
+// Method:    operator==- compare a string and a c string
+// FullName:  operator==
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: const string & str- a string
+// Parameter: const char * str2 - a non null string
+//************************************
 bool operator==(const string& str,const char * str2)
 {
 	const char * temp=str.c_str();
 	return strcmp(temp,str2)==0;
 }
 
+//************************************
+// Method:    makeNewReq - make a blank request
+// FullName:  makeNewReq
+// Access:    public 
+// Returns:   request
+// Qualifier:
+//************************************
 request makeNewReq()
 {
 	request req;
@@ -502,6 +592,15 @@ request makeNewReq()
 	return req;
 }
 
+//************************************
+// Method:    makeresponse -make a response out of request
+// FullName:  makeresponse
+// Access:    public 
+// Returns:   int
+// Qualifier:
+// Parameter: request & reqinfo- a request
+// Parameter: string & response - a string for the response
+//************************************
 int makeresponse( request & reqinfo, string &response )
 {
 	response="HTTP/";
@@ -513,7 +612,7 @@ int makeresponse( request & reqinfo, string &response )
 	response+=ReqToString(reqinfo.methodType);
 	response+=CRLF;
 	writeDateHeader(response);
-	writeContentLengthHeader(response,reqinfo.body.length()); //EDIT THIS
+	writeContentLengthHeader(response,reqinfo.body.length()); 
 	response+=CRLF;//End reply.
 	if (shouldHaveBody)
 	{
@@ -525,6 +624,14 @@ int makeresponse( request & reqinfo, string &response )
 	return 1;
 }
 
+//************************************
+// Method:    writeDateHeader - write a date header in the format Date:(curr time and date)
+// FullName:  writeDateHeader
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: string & response
+//************************************
 void writeDateHeader(string & response)
 {
 	response+="Date: ";
@@ -532,7 +639,16 @@ void writeDateHeader(string & response)
 	response+=CRLF;
 }
 
-void writeContentLengthHeader(string & response, int contentLength) //EDIT THIS
+//************************************
+// Method:    writeContentLengthHeader- adds the contacts length header to the response
+// FullName:  writeContentLengthHeader
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: string & response
+// Parameter: int contentLength
+//************************************
+void writeContentLengthHeader(string & response, int contentLength) 
 {
 	int res=numOfDigits(contentLength);
 	char* temp = new char [numOfDigits(contentLength)+1];
@@ -544,6 +660,14 @@ void writeContentLengthHeader(string & response, int contentLength) //EDIT THIS
 }
 
 
+//************************************
+// Method:    ReqToString- recive a method type and returns  an appropriate string(for replay types only)
+// FullName:  ReqToString
+// Access:    public 
+// Returns:   std::string
+// Qualifier:
+// Parameter: eReqType methodType- a send method type
+//************************************
 string ReqToString (eReqType methodType)
 {
 	switch(methodType)
@@ -558,6 +682,14 @@ string ReqToString (eReqType methodType)
 	}
 
 }
+//************************************
+// Method:    actOnRequest- recives a request and acts according to it
+// FullName:  actOnRequest
+// Access:    public 
+// Returns:   int
+// Qualifier:
+// Parameter: request & reqinfo- a given request
+//************************************
 int actOnRequest(request & reqinfo)
 {
 	switch(reqinfo.methodType)
@@ -574,10 +706,20 @@ int actOnRequest(request & reqinfo)
 	case DELETE_REQ:
 		deleteFile(reqinfo);
 		break;
-	}
+	}//for any other type do nothing-its not implemented
 	return 1;
 }
 
+//************************************
+// Method:    getFile- gets a textual file (such as txt or html format) path- if the file dosent exist a 404 whould return 
+//			if it do exist  and cant be sent(write protected or a folder) a 501 whould be returnd otherwie the file whould be added to the
+//			message body and a 200 would be returned
+// FullName:  getFile
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: request & reqinfo -a request
+//************************************
 void getFile(request & reqinfo)
 {
 	if (!exists(reqinfo.uri.c_str()))
@@ -605,6 +747,15 @@ void getFile(request & reqinfo)
 }
 
 
+//************************************
+// Method:    putFile - puts a textual file on the path given containig the request body - 
+//				if the body is empty- returns a 400 if it is write protected a 403 otherwise a 200
+// FullName:  putFile
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: request & reqinfo- a request
+//************************************
 void putFile(request & reqinfo)
 {
 	if (reqinfo.body.empty())
@@ -637,6 +788,14 @@ void putFile(request & reqinfo)
 	}
 }
 
+//************************************
+// Method:    deleteFile-deletes a file -on successes a 200 is returnd if it is not found a 404 if its write protected 403 otherwise 500
+// FullName:  deleteFile
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: request & req
+//************************************
 void deleteFile(request & req)
 {
 	if ( !exists(req.uri.c_str()) ) //file dosent exsist
@@ -659,6 +818,15 @@ void deleteFile(request & req)
 	}
 }
 
+//************************************
+// Method:    readBody -read a html request body
+// FullName:  readBody
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: char *  & buffer
+// Parameter: request & req
+//************************************
 void readBody( char * & buffer,request & req )
 {
 	if (buffer==NULL || buffer[0]=='\0')
@@ -673,10 +841,16 @@ void readBody( char * & buffer,request & req )
 	}	                                                                                                                   
 }
 
+//************************************
+// Method:    CleanURI- receives a URI as it was given by the client and trensforms it to readable format
+// FullName:  CleanURI
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: string & uri
+//************************************
 void CleanURI(string & uri)
 {
-	try
-	{
 		char asciinum[3] = {0};
 		int i = 0, c;
 		char* buffer=new char [(uri.length())+1];
@@ -708,10 +882,5 @@ void CleanURI(string & uri)
 		}
 		uri=buffer;
 		delete []buffer;
-		
-	}
-	catch(...)
-	{
-		cerr<<"error in clean uri "<<uri.c_str();
-	}
+	
 }
