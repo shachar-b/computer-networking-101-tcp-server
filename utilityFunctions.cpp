@@ -1,16 +1,40 @@
 #include "utilityFunctions.h"
 
+//************************************
+// Method:    passSpaces - pass all LWS in the given string(by changeing the pointer!)
+// FullName:  passSpaces
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: char *  & buff - a non null cstring
+//************************************
 void passSpaces( char * & buff )
 {
 	while (buff!="" && isLWS(buff[0]) )
 		buff++;//read from next place
 }
 
+//************************************
+// Method:    isLWS - returns true if and only if the char is a white space a tab a new line or carige return
+// FullName:  isLWS
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: char a
+//************************************
 bool isLWS(char a)
 {
 	return (a=='\n'||a=='\t' || a==' ' || a=='\r');
 }
 
+//************************************
+// Method:    numOfDigits- returns the number of digits in the given (positve) number
+// FullName:  numOfDigits
+// Access:    public 
+// Returns:   int
+// Qualifier:
+// Parameter: int num
+//************************************
 int numOfDigits(int num)
 {
 	int result=1;
@@ -22,6 +46,13 @@ int numOfDigits(int num)
 	return result;
 }
 
+//************************************
+// Method:    formatTime - a getter for the current time in printable format
+// FullName:  formatTime
+// Access:    public 
+// Returns:   char*
+// Qualifier:
+//************************************
 char* formatTime()
 {
 	char* timeStr;
@@ -34,6 +65,14 @@ char* formatTime()
 	return timeStr;
 }
 
+//************************************
+// Method:    exists- revcives a file path and returns true iff the file/folder exist
+// FullName:  exists
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: const char * filePath- a non null path
+//************************************
 bool exists(const char* filePath)
 {
 	//This will get the file attributes bitlist of the file
@@ -41,11 +80,17 @@ bool exists(const char* filePath)
 	//If an error occurred it will equal to INVALID_FILE_ATTRIBUTES
 	if(fileAtt == INVALID_FILE_ATTRIBUTES)
 		return false;
-
-	//If the path referers to a directory it should also not exists.
 	return true;// for now i allow folders//( ( fileAtt & FILE_ATTRIBUTE_DIRECTORY ) == 0 ); 
 }
 
+//************************************
+// Method:    isWriteProtected- returns true iff the file is write protected
+// FullName:  isWriteProtected
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: const char * filePath - a non null path
+//************************************
 bool isWriteProtected(const char* filePath)
 {
 	//This will get the file attributes bitlist of the file
@@ -54,6 +99,14 @@ bool isWriteProtected(const char* filePath)
 	return ( ( fileAtt & FILE_ATTRIBUTE_READONLY ) != 0 ); 
 }
 
+//************************************
+// Method:    makePath- makes a directory path
+// FullName:  makePath
+// Access:    public 
+// Returns:   void
+// Qualifier:
+// Parameter: const string & path
+//************************************
 void makePath( const string &path )
 {
 	char* backSlash = "\\"; //Using char* for compatability with find_last_of
@@ -75,6 +128,14 @@ void makePath( const string &path )
 	}
 }
 
+//************************************
+// Method:    FolderExists-returns true iff the given folder path exsist
+// FullName:  FolderExists
+// Access:    public 
+// Returns:   bool
+// Qualifier:
+// Parameter: char * strFolderName- a non null cstring
+//************************************
 bool FolderExists(char* strFolderName)
 {
 	return GetFileAttributesA(strFolderName) != INVALID_FILE_ATTRIBUTES;
